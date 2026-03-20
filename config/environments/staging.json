@@ -1,0 +1,11 @@
+{
+  "app": {
+    "log_level": "info"
+  },
+  "vector": {
+    "backend": "qdrant"
+  },
+  "rerank": {
+    "model": "BAAI/bge-reranker-v2-m3"
+  }
+}

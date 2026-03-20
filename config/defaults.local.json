@@ -1,0 +1,70 @@
+{
+  "app": {
+    "server_addr": ":8080",
+    "log_level": "debug"
+  },
+  "llm": {
+    "use_openai": false,
+    "openai_base_url": "https://api.openai.com",
+    "openai_llm_base_url": "https://api.openai.com",
+    "openai_api_key": "",
+    "openai_llm_api_key": "",
+    "model": "gpt-5.4-mini"
+  },
+  "embedding": {
+    "openai_base_url": "https://api.openai.com",
+    "openai_embedding_base_url": "https://api.openai.com",
+    "openai_api_key": "",
+    "openai_embedding_api_key": "",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dim": 1536
+  },
+  "timeouts": {
+    "http_seconds": 30,
+    "qdrant_seconds": 20
+  },
+  "vector": {
+    "backend": "memory",
+    "qdrant": {
+      "url": "http://localhost:6333",
+      "host": "localhost",
+      "grpc_port": 6334,
+      "api_key": "",
+      "use_tls": false
+    },
+    "collections": {
+      "chunk": "rag_chunks_local",
+      "summary": "rag_summaries_local"
+    }
+  },
+  "retrieval": {
+    "chunk_size": 600,
+    "chunk_overlap": 80,
+    "top_k": 6,
+    "max_retries": 2
+  },
+  "rerank": {
+    "top_m": 4,
+    "url": "",
+    "api_key": "",
+    "model": "BAAI/bge-reranker-v2-m3"
+  },
+  "routing": {
+    "router_model": "gpt-5.4-mini",
+    "grade_model": "gpt-5.4-mini"
+  },
+  "sql": {
+    "driver": "sqlite",
+    "dsn": ":memory:"
+  },
+  "web": {
+    "serper_api_key": ""
+  },
+  "orchestration": {
+    "planner_max_subqueries": 3,
+    "max_external_calls": 1,
+    "timeout_seconds": 8,
+    "early_stop_min_candidates": 2,
+    "early_stop_top_score": 0.03
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "app": {
+    "server_addr": ":8081",
+    "log_level": "debug"
+  },
+  "llm": {
+    "use_openai": true,
+    "openai_llm_base_url": "https://xiaohumini.site/v1",
+    "openai_llm_api_key": "sk-MheyGce4dzSotSqkeLt3gxfZ9P21xNNgJaBwTUANUstYifs5",
+    "model": "gpt-5.4-mini"
+  },
+  "embedding": {
+    "openai_embedding_base_url": "https://xiaohumini.site/v1",
+    "openai_embedding_api_key": "sk-MheyGce4dzSotSqkeLt3gxfZ9P21xNNgJaBwTUANUstYifs5",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dim": 1536
+  },
+  "vector": {
+    "backend": "qdrant"
+  },
+  "rerank": {
+    "api_key": "sk-MheyGce4dzSotSqkeLt3gxfZ9P21xNNgJaBwTUANUstYifs5",
+    "url": "https://xiaohumini.site/v1/rerank",
+    "model": "BAAI/bge-reranker-v2-m3"
+  }
+}

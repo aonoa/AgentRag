@@ -1,0 +1,26 @@
+{
+  "app": {
+    "server_addr": ":8080",
+    "log_level": "debug"
+  },
+  "llm": {
+    "use_openai": true,
+    "openai_llm_base_url": "https://openai.com/v1",
+    "openai_llm_api_key": "",
+    "model": "gpt-5.4-mini"
+  },
+  "embedding": {
+    "openai_embedding_base_url": "https://openai.com/v1",
+    "openai_embedding_api_key": "",
+    "embedding_model": "text-embedding-3-small",
+    "embedding_dim": 1536
+  },
+  "vector": {
+    "backend": "qdrant"
+  },
+  "rerank": {
+    "api_key": "",
+    "url": "https://xiaohumini.site/v1/rerank",
+    "model": "BAAI/bge-reranker-v2-m3"
+  }
+}
