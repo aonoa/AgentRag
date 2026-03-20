@@ -33,6 +33,7 @@
 - `routing`
 - `sql`
 - `web`
+- `skills`
 
 - `orchestration`
 
@@ -46,6 +47,14 @@
 - `ORCHESTRATOR_TIMEOUT_SECONDS`
 - `EARLY_STOP_MIN_CANDIDATES`
 - `EARLY_STOP_TOP_SCORE`
+
+## Skills
+
+- `SKILLS_DIR`：技能目录，按 `<SKILLS_DIR>/<skillName>/SKILL.md` 组织。
+- 当请求里显式传 `skill` 时，系统优先执行 skill；否则可根据问题与技能名匹配自动触发。
+- `DIRECT_CONFIDENCE_THRESHOLD`
+- `DIRECT_AUTO_FALLBACK`
+- `DIRECT_FALLBACK_ROUTE` (`catalog|direct_chunk|hierarchical|hybrid|sql|web|direct`)
 
 ## SQL backend configuration
 

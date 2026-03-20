@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"agentragplus/internal/config"
@@ -169,4 +171,192 @@ func TestAskDirectRouteSkipsRetrievalPipeline(t *testing.T) {
 	if skipped, ok := directMap["retrieval_skipped"].(bool); !ok || !skipped {
 		t.Fatal("expected retrieval_skipped=true")
 	}
+	if _, ok := directMap["grade"]; !ok {
+		t.Fatal("expected grade in direct debug map")
+	}
+}
+
+func TestAskCatalogRouteReturnsSummaryContext(t *testing.T) {
+	cfg := config.Config{
+		LLMModel:          "mock-llm",
+		EmbeddingModel:    "mock-embed",
+		RouterModel:       "mock-llm",
+		GradeModel:        "mock-llm",
+		TopK:              4,
+		RerankTopM:        4,
+		MaxRetries:        1,
+		ChunkSize:         40,
+		ChunkOverlap:      10,
+		ChunkCollection:   "chunks",
+		SummaryCollection: "summaries",
+	}
+	llmClient := llm.NewMockClient()
+	ms := store.NewMemoryStore()
+	if err := ms.EnsureCollections(context.Background(), cfg.ChunkCollection, cfg.SummaryCollection); err != nil {
+		t.Fatalf("ensure collections: %v", err)
+	}
+	if err := ms.UpsertSummaries(context.Background(), cfg.SummaryCollection, []domain.Summary{
+		{SummaryID: "sum_a", DocumentID: "doc_a", Source: "kb_a.md", Text: "A 文档讲了 Agentic RAG 架构概览", Embedding: embedVec(t, llmClient, "Agentic RAG 架构概览")},
+		{SummaryID: "sum_b", DocumentID: "doc_b", Source: "kb_b.md", Text: "B 文档讲了向量检索和混合检索", Embedding: embedVec(t, llmClient, "向量检索和混合检索")},
+	}); err != nil {
+		t.Fatalf("upsert summaries: %v", err)
+	}
+
+	retr := retrieval.NewRetriever(cfg, llmClient, ms)
+	rrk := rerank.NewHTTPClient(cfg)
+	sqlTool := tools.NewSQLTool(nil, llmClient, cfg)
+	webTool := tools.NewWebTool(cfg)
+	svc, err := NewService(cfg, llmClient, retr, rrk, sqlTool, webTool)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	out, err := svc.Ask(context.Background(), domain.AskRequest{Question: "先看看知识库目录有哪些内容", ForceRoute: domain.RouteCatalog, Debug: true})
+	if err != nil {
+		t.Fatalf("ask catalog failed: %v", err)
+	}
+	if out.Route != domain.RouteCatalog {
+		t.Fatalf("expected catalog route, got %s", out.Route)
+	}
+	if out.Attempts != 1 {
+		t.Fatalf("expected one attempt, got %d", out.Attempts)
+	}
+	if len(out.References) == 0 {
+		t.Fatal("expected catalog route to return summary references")
+	}
+	if out.Debug == nil {
+		t.Fatal("expected debug payload")
+	}
+}
+
+func TestAskExplicitSkill(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "eino-guide")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	skillDoc := "---\nname: eino-guide\ndescription: Eino 入门指南\n---\n这是一个 Eino 入门技能文档。"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillDoc), 0o644); err != nil {
+		t.Fatalf("write skill doc: %v", err)
+	}
+
+	cfg := config.Config{
+		LLMModel:          "mock-llm",
+		EmbeddingModel:    "mock-embed",
+		RouterModel:       "mock-llm",
+		GradeModel:        "mock-llm",
+		TopK:              4,
+		RerankTopM:        2,
+		MaxRetries:        2,
+		ChunkSize:         40,
+		ChunkOverlap:      10,
+		ChunkCollection:   "chunks",
+		SummaryCollection: "summaries",
+		SkillsDir:         dir,
+	}
+	llmClient := llm.NewMockClient()
+	ms := store.NewMemoryStore()
+	if err := ms.EnsureCollections(context.Background(), cfg.ChunkCollection, cfg.SummaryCollection); err != nil {
+		t.Fatalf("ensure collections: %v", err)
+	}
+	retr := retrieval.NewRetriever(cfg, llmClient, ms)
+	rrk := rerank.NewHTTPClient(cfg)
+	sqlTool := tools.NewSQLTool(nil, llmClient, cfg)
+	webTool := tools.NewWebTool(cfg)
+	svc, err := NewService(cfg, llmClient, retr, rrk, sqlTool, webTool)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	out, err := svc.Ask(context.Background(), domain.AskRequest{Question: "请用eino-guide回答", Skill: "eino-guide", Debug: true})
+	if err != nil {
+		t.Fatalf("ask skill failed: %v", err)
+	}
+	if out.Route != domain.RouteSkill {
+		t.Fatalf("expected skill route, got %s", out.Route)
+	}
+	if len(out.References) == 0 {
+		t.Fatal("expected skill references")
+	}
+	if out.Debug == nil {
+		t.Fatal("expected skill debug payload")
+	}
+}
+
+func TestAskExplicitSkillNotFound(t *testing.T) {
+	cfg := config.Config{
+		LLMModel:          "mock-llm",
+		EmbeddingModel:    "mock-embed",
+		RouterModel:       "mock-llm",
+		GradeModel:        "mock-llm",
+		TopK:              4,
+		RerankTopM:        2,
+		MaxRetries:        2,
+		ChunkSize:         40,
+		ChunkOverlap:      10,
+		ChunkCollection:   "chunks",
+		SummaryCollection: "summaries",
+	}
+	llmClient := llm.NewMockClient()
+	ms := store.NewMemoryStore()
+	if err := ms.EnsureCollections(context.Background(), cfg.ChunkCollection, cfg.SummaryCollection); err != nil {
+		t.Fatalf("ensure collections: %v", err)
+	}
+	retr := retrieval.NewRetriever(cfg, llmClient, ms)
+	rrk := rerank.NewHTTPClient(cfg)
+	sqlTool := tools.NewSQLTool(nil, llmClient, cfg)
+	webTool := tools.NewWebTool(cfg)
+	svc, err := NewService(cfg, llmClient, retr, rrk, sqlTool, webTool)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if _, err := svc.Ask(context.Background(), domain.AskRequest{Question: "test", Skill: "eino-guide"}); err == nil {
+		t.Fatal("expected explicit missing skill error")
+	}
+}
+
+func TestAskStreamExplicitSkillNotFound(t *testing.T) {
+	cfg := config.Config{
+		LLMModel:          "mock-llm",
+		EmbeddingModel:    "mock-embed",
+		RouterModel:       "mock-llm",
+		GradeModel:        "mock-llm",
+		TopK:              4,
+		RerankTopM:        2,
+		MaxRetries:        2,
+		ChunkSize:         40,
+		ChunkOverlap:      10,
+		ChunkCollection:   "chunks",
+		SummaryCollection: "summaries",
+	}
+	llmClient := llm.NewMockClient()
+	ms := store.NewMemoryStore()
+	if err := ms.EnsureCollections(context.Background(), cfg.ChunkCollection, cfg.SummaryCollection); err != nil {
+		t.Fatalf("ensure collections: %v", err)
+	}
+	retr := retrieval.NewRetriever(cfg, llmClient, ms)
+	rrk := rerank.NewHTTPClient(cfg)
+	sqlTool := tools.NewSQLTool(nil, llmClient, cfg)
+	webTool := tools.NewWebTool(cfg)
+	svc, err := NewService(cfg, llmClient, retr, rrk, sqlTool, webTool)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	if _, err := svc.AskStream(context.Background(), domain.AskRequest{Question: "test", Skill: "eino-guide"}); err == nil {
+		t.Fatal("expected explicit missing skill error")
+	}
+}
+
+func embedVec(t *testing.T, c llm.Client, text string) []float64 {
+	t.Helper()
+	vecs, err := c.Embed(context.Background(), "mock-embed", []string{text})
+	if err != nil {
+		t.Fatalf("embed failed: %v", err)
+	}
+	if len(vecs) == 0 {
+		t.Fatal("empty embedding output")
+	}
+	return vecs[0]
 }

@@ -13,10 +13,31 @@ func clearConfigEnv(t *testing.T) {
 		"EMBEDDING_DIM", "HTTP_TIMEOUT_SECONDS", "QDRANT_TIMEOUT_SECONDS", "VECTOR_BACKEND", "QDRANT_URL", "QDRANT_HOST", "QDRANT_GRPC_PORT",
 		"QDRANT_API_KEY", "QDRANT_USE_TLS", "QDRANT_CHUNK_COLLECTION", "QDRANT_SUMMARY_COLLECTION", "CHUNK_SIZE", "CHUNK_OVERLAP",
 		"RETRIEVAL_TOP_K", "MAX_RETRY_LOOPS", "RERANK_TOP_M", "RERANK_URL", "RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL",
-		"GRADE_MODEL", "SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "PLANNER_MAX_SUBQUERIES", "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "ORCHESTRATOR_TIMEOUT_SECONDS", "EARLY_STOP_MIN_CANDIDATES", "EARLY_STOP_TOP_SCORE",
+		"GRADE_MODEL", "SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR", "PLANNER_MAX_SUBQUERIES", "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "ORCHESTRATOR_TIMEOUT_SECONDS", "EARLY_STOP_MIN_CANDIDATES", "EARLY_STOP_TOP_SCORE", "DIRECT_CONFIDENCE_THRESHOLD", "DIRECT_AUTO_FALLBACK", "DIRECT_FALLBACK_ROUTE",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
+	}
+}
+
+func TestDirectFallbackConfigFromEnv(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DIRECT_CONFIDENCE_THRESHOLD", "0.82")
+	t.Setenv("DIRECT_AUTO_FALLBACK", "true")
+	t.Setenv("DIRECT_FALLBACK_ROUTE", "hybrid")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.DirectConfidenceThreshold != 0.82 {
+		t.Fatalf("expected direct confidence threshold 0.82, got %v", cfg.DirectConfidenceThreshold)
+	}
+	if !cfg.DirectAutoFallback {
+		t.Fatal("expected DIRECT_AUTO_FALLBACK=true")
+	}
+	if cfg.DirectFallbackRoute != "hybrid" {
+		t.Fatalf("expected DIRECT_FALLBACK_ROUTE=hybrid, got %s", cfg.DirectFallbackRoute)
 	}
 }
 

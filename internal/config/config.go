@@ -64,12 +64,16 @@ type Config struct {
 	SQLDriver string
 
 	SerperAPIKey string
+	SkillsDir    string
 
 	PlannerMaxSubqueries       int
 	OrchestratorMaxExternal    int
 	OrchestratorTimeoutSeconds int
 	EarlyStopMinCandidates     int
 	EarlyStopTopScore          float64
+	DirectConfidenceThreshold  float64
+	DirectAutoFallback         bool
+	DirectFallbackRoute        string
 }
 
 func Load() (Config, error) {
@@ -130,11 +134,15 @@ func builtinDefaults() Config {
 		SQLDSN:                     "",
 		SQLDriver:                  SQLDriverSQLite,
 		SerperAPIKey:               "",
+		SkillsDir:                  "",
 		PlannerMaxSubqueries:       3,
 		OrchestratorMaxExternal:    2,
 		OrchestratorTimeoutSeconds: 8,
 		EarlyStopMinCandidates:     3,
 		EarlyStopTopScore:          0.045,
+		DirectConfidenceThreshold:  0.70,
+		DirectAutoFallback:         true,
+		DirectFallbackRoute:        "catalog",
 	}
 }
 
@@ -213,8 +221,9 @@ func toCanonicalKV(raw map[string]any) map[string]any {
 		"EMBEDDING_DIM", "HTTP_TIMEOUT_SECONDS", "QDRANT_TIMEOUT_SECONDS", "VECTOR_BACKEND", "QDRANT_URL", "QDRANT_HOST",
 		"QDRANT_GRPC_PORT", "QDRANT_API_KEY", "QDRANT_USE_TLS", "QDRANT_CHUNK_COLLECTION", "QDRANT_SUMMARY_COLLECTION",
 		"CHUNK_SIZE", "CHUNK_OVERLAP", "RETRIEVAL_TOP_K", "MAX_RETRY_LOOPS", "RERANK_TOP_M", "RERANK_URL",
-		"RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL", "GRADE_MODEL", "SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY",
+		"RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL", "GRADE_MODEL", "SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR",
 		"PLANNER_MAX_SUBQUERIES", "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "ORCHESTRATOR_TIMEOUT_SECONDS", "EARLY_STOP_MIN_CANDIDATES", "EARLY_STOP_TOP_SCORE",
+		"DIRECT_CONFIDENCE_THRESHOLD", "DIRECT_AUTO_FALLBACK", "DIRECT_FALLBACK_ROUTE",
 	} {
 		if v, ok := raw[key]; ok {
 			out[key] = v
@@ -273,12 +282,16 @@ func toCanonicalKV(raw map[string]any) map[string]any {
 	assignNested(raw, out, "SQL_DSN", "sql", "dsn")
 
 	assignNested(raw, out, "SERPER_API_KEY", "web", "serper_api_key")
+	assignNested(raw, out, "SKILLS_DIR", "skills", "base_dir")
 
 	assignNested(raw, out, "PLANNER_MAX_SUBQUERIES", "orchestration", "planner_max_subqueries")
 	assignNested(raw, out, "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "orchestration", "max_external_calls")
 	assignNested(raw, out, "ORCHESTRATOR_TIMEOUT_SECONDS", "orchestration", "timeout_seconds")
 	assignNested(raw, out, "EARLY_STOP_MIN_CANDIDATES", "orchestration", "early_stop_min_candidates")
 	assignNested(raw, out, "EARLY_STOP_TOP_SCORE", "orchestration", "early_stop_top_score")
+	assignNested(raw, out, "DIRECT_CONFIDENCE_THRESHOLD", "orchestration", "direct_confidence_threshold")
+	assignNested(raw, out, "DIRECT_AUTO_FALLBACK", "orchestration", "direct_auto_fallback")
+	assignNested(raw, out, "DIRECT_FALLBACK_ROUTE", "orchestration", "direct_fallback_route")
 	return out
 }
 
@@ -314,8 +327,9 @@ func currentEnvKV() map[string]any {
 		"QDRANT_HOST", "QDRANT_GRPC_PORT", "QDRANT_API_KEY", "QDRANT_USE_TLS", "QDRANT_CHUNK_COLLECTION",
 		"QDRANT_SUMMARY_COLLECTION", "CHUNK_SIZE", "CHUNK_OVERLAP", "RETRIEVAL_TOP_K", "MAX_RETRY_LOOPS",
 		"RERANK_TOP_M", "RERANK_URL", "RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL", "GRADE_MODEL",
-		"SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY",
+		"SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR",
 		"PLANNER_MAX_SUBQUERIES", "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "ORCHESTRATOR_TIMEOUT_SECONDS", "EARLY_STOP_MIN_CANDIDATES", "EARLY_STOP_TOP_SCORE",
+		"DIRECT_CONFIDENCE_THRESHOLD", "DIRECT_AUTO_FALLBACK", "DIRECT_FALLBACK_ROUTE",
 	} {
 		if val, ok := os.LookupEnv(key); ok {
 			trimmed := strings.TrimSpace(val)
@@ -508,6 +522,11 @@ func applyKV(cfg *Config, kv map[string]any) error {
 	} else if ok {
 		cfg.SerperAPIKey = strings.TrimSpace(v)
 	}
+	if v, ok, err := kvString(kv, "SKILLS_DIR"); err != nil {
+		return err
+	} else if ok {
+		cfg.SkillsDir = strings.TrimSpace(v)
+	}
 	if v, ok, err := kvInt(kv, "PLANNER_MAX_SUBQUERIES"); err != nil {
 		return err
 	} else if ok {
@@ -532,6 +551,21 @@ func applyKV(cfg *Config, kv map[string]any) error {
 		return err
 	} else if ok {
 		cfg.EarlyStopTopScore = v
+	}
+	if v, ok, err := kvFloat(kv, "DIRECT_CONFIDENCE_THRESHOLD"); err != nil {
+		return err
+	} else if ok {
+		cfg.DirectConfidenceThreshold = v
+	}
+	if v, ok, err := kvBool(kv, "DIRECT_AUTO_FALLBACK"); err != nil {
+		return err
+	} else if ok {
+		cfg.DirectAutoFallback = v
+	}
+	if v, ok, err := kvString(kv, "DIRECT_FALLBACK_ROUTE"); err != nil {
+		return err
+	} else if ok {
+		cfg.DirectFallbackRoute = strings.ToLower(strings.TrimSpace(v))
 	}
 
 	return nil
@@ -598,6 +632,18 @@ func validate(cfg Config) error {
 	}
 	if cfg.EarlyStopTopScore < 0 {
 		return errors.New("EARLY_STOP_TOP_SCORE must be >= 0")
+	}
+	if cfg.DirectConfidenceThreshold < 0 || cfg.DirectConfidenceThreshold > 1 {
+		return errors.New("DIRECT_CONFIDENCE_THRESHOLD must be between 0 and 1")
+	}
+	if cfg.DirectFallbackRoute != "" {
+		validRoutes := map[string]bool{
+			"direct": true, "direct_chunk": true, "catalog": true,
+			"hierarchical": true, "sql": true, "web": true, "hybrid": true,
+		}
+		if !validRoutes[cfg.DirectFallbackRoute] {
+			return errors.New("DIRECT_FALLBACK_ROUTE must be one of [direct,direct_chunk,catalog,hierarchical,sql,web,hybrid]")
+		}
 	}
 	return nil
 }

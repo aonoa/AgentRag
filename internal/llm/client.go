@@ -140,6 +140,8 @@ func (m *MockClient) Chat(_ context.Context, _ string, systemPrompt string, user
 	lower := strings.ToLower(userPrompt)
 	if strings.Contains(lower, "route") || strings.Contains(systemPrompt, "ROUTE_SELECTOR") {
 		switch {
+		case strings.Contains(lower, "目录") || strings.Contains(lower, "有哪些") || strings.Contains(lower, "可用内容") || strings.Contains(lower, "browse") || strings.Contains(lower, "catalog"):
+			return "catalog", nil
 		case strings.Contains(lower, "sql") || strings.Contains(lower, "统计"):
 			return "sql", nil
 		case strings.Contains(lower, "实时") || strings.Contains(lower, "新闻") || strings.Contains(lower, "web"):

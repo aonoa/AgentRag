@@ -5,8 +5,10 @@ import "time"
 type RouteType string
 
 const (
+	RouteSkill        RouteType = "skill"
 	RouteDirect       RouteType = "direct"
 	RouteDirectChunk  RouteType = "direct_chunk"
+	RouteCatalog      RouteType = "catalog"
 	RouteHierarchical RouteType = "hierarchical"
 	RouteSQL          RouteType = "sql"
 	RouteWeb          RouteType = "web"
@@ -17,6 +19,8 @@ type AskRequest struct {
 	Question     string            `json:"question"`
 	SessionID    string            `json:"session_id,omitempty"`
 	ForceRoute   RouteType         `json:"force_route,omitempty"`
+	Skill        string            `json:"skill,omitempty"`
+	SkillArgs    map[string]any    `json:"skill_args,omitempty"`
 	Debug        bool              `json:"debug,omitempty"`
 	ExtraFilters map[string]string `json:"extra_filters,omitempty"`
 }

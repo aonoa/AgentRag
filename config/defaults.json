@@ -60,11 +60,17 @@
   "web": {
     "serper_api_key": ""
   },
+  "skills": {
+    "base_dir": ""
+  },
   "orchestration": {
     "planner_max_subqueries": 3,
     "max_external_calls": 2,
     "timeout_seconds": 8,
     "early_stop_min_candidates": 3,
-    "early_stop_top_score": 0.045
+    "early_stop_top_score": 0.045,
+    "direct_confidence_threshold": 0.7,
+    "direct_auto_fallback": true,
+    "direct_fallback_route": "catalog"
   }
 }

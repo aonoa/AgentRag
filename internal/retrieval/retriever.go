@@ -95,6 +95,20 @@ func (r *Retriever) Hierarchical(ctx context.Context, question string, filter ma
 	}, nil
 }
 
+func (r *Retriever) SearchSummariesOnly(ctx context.Context, embedding []float64, topK int, filter map[string]any) ([]domain.RetrievalCandidate, error) {
+	rows, err := r.store.SearchSummaries(ctx, r.cfg.SummaryCollection, embedding, topK, filter)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].Layer = "catalog_summary"
+		if rows[i].SummaryID == "" {
+			rows[i].SummaryID = rows[i].ChunkID
+		}
+	}
+	return rows, nil
+}
+
 func textsOf(rows []domain.RetrievalCandidate) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
