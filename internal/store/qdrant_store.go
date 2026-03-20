@@ -9,6 +9,7 @@ import (
 
 	"agentragplus/internal/domain"
 
+	"github.com/google/uuid"
 	qdrant "github.com/qdrant/go-client/qdrant"
 )
 
@@ -62,6 +63,7 @@ func (q *QdrantStore) UpsertChunks(ctx context.Context, collection string, chunk
 	for _, c := range chunks {
 		sparseIdx, sparseVals := sparseTermVector(c.Text)
 		payload := map[string]any{
+			"chunk_id":      c.ChunkID,
 			"document_id":   c.DocumentID,
 			"summary_id":    c.SummaryID,
 			"source":        c.Source,
@@ -71,7 +73,7 @@ func (q *QdrantStore) UpsertChunks(ctx context.Context, collection string, chunk
 			"content_class": c.ContentClass,
 		}
 		points = append(points, &qdrant.PointStruct{
-			Id: qdrant.NewID(c.ChunkID),
+			Id: q.pointIDForExternalID("chunk", c.ChunkID),
 			Vectors: qdrant.NewVectorsMap(map[string]*qdrant.Vector{
 				"dense":  qdrant.NewVectorDense(toFloat32Vec(c.Embedding)),
 				"sparse": qdrant.NewVectorSparse(sparseIdx, sparseVals),
@@ -90,6 +92,7 @@ func (q *QdrantStore) UpsertChunks(ctx context.Context, collection string, chunk
 		fallback := make([]*qdrant.PointStruct, 0, len(chunks))
 		for _, c := range chunks {
 			payload := map[string]any{
+				"chunk_id":      c.ChunkID,
 				"document_id":   c.DocumentID,
 				"summary_id":    c.SummaryID,
 				"source":        c.Source,
@@ -98,7 +101,7 @@ func (q *QdrantStore) UpsertChunks(ctx context.Context, collection string, chunk
 				"chunk_count":   c.ChunkCount,
 				"content_class": c.ContentClass,
 			}
-			fallback = append(fallback, &qdrant.PointStruct{Id: qdrant.NewID(c.ChunkID), Vectors: qdrant.NewVectors(toFloat32Vec(c.Embedding)...), Payload: qdrant.NewValueMap(payload)})
+			fallback = append(fallback, &qdrant.PointStruct{Id: q.pointIDForExternalID("chunk", c.ChunkID), Vectors: qdrant.NewVectors(toFloat32Vec(c.Embedding)...), Payload: qdrant.NewValueMap(payload)})
 		}
 		if _, e2 := q.client.Upsert(ctx, &qdrant.UpsertPoints{CollectionName: collection, Points: fallback, Wait: &wait}); e2 != nil {
 			return fmt.Errorf("qdrant upsert chunks fallback failed: %w", e2)
@@ -112,13 +115,15 @@ func (q *QdrantStore) UpsertSummaries(ctx context.Context, collection string, su
 	for _, s := range summaries {
 		sparseIdx, sparseVals := sparseTermVector(s.Text)
 		payload := map[string]any{
+			"chunk_id":      s.SummaryID,
+			"summary_id":    s.SummaryID,
 			"document_id":   s.DocumentID,
 			"source":        s.Source,
 			"text":          s.Text,
 			"content_class": s.ContentClass,
 		}
 		points = append(points, &qdrant.PointStruct{
-			Id: qdrant.NewID(s.SummaryID),
+			Id: q.pointIDForExternalID("summary", s.SummaryID),
 			Vectors: qdrant.NewVectorsMap(map[string]*qdrant.Vector{
 				"dense":  qdrant.NewVectorDense(toFloat32Vec(s.Embedding)),
 				"sparse": qdrant.NewVectorSparse(sparseIdx, sparseVals),
@@ -137,12 +142,14 @@ func (q *QdrantStore) UpsertSummaries(ctx context.Context, collection string, su
 		fallback := make([]*qdrant.PointStruct, 0, len(summaries))
 		for _, s := range summaries {
 			payload := map[string]any{
+				"chunk_id":      s.SummaryID,
+				"summary_id":    s.SummaryID,
 				"document_id":   s.DocumentID,
 				"source":        s.Source,
 				"text":          s.Text,
 				"content_class": s.ContentClass,
 			}
-			fallback = append(fallback, &qdrant.PointStruct{Id: qdrant.NewID(s.SummaryID), Vectors: qdrant.NewVectors(toFloat32Vec(s.Embedding)...), Payload: qdrant.NewValueMap(payload)})
+			fallback = append(fallback, &qdrant.PointStruct{Id: q.pointIDForExternalID("summary", s.SummaryID), Vectors: qdrant.NewVectors(toFloat32Vec(s.Embedding)...), Payload: qdrant.NewValueMap(payload)})
 		}
 		if _, e2 := q.client.Upsert(ctx, &qdrant.UpsertPoints{CollectionName: collection, Points: fallback, Wait: &wait}); e2 != nil {
 			return fmt.Errorf("qdrant upsert summaries fallback failed: %w", e2)
@@ -316,10 +323,15 @@ func (q *QdrantStore) buildFilter(filter map[string]any) *qdrant.Filter {
 }
 
 func (q *QdrantStore) pointToCandidate(p *qdrant.ScoredPoint) domain.RetrievalCandidate {
+	chunkID := payloadString(p.GetPayload(), "chunk_id")
+	if chunkID == "" {
+		chunkID = pointIDString(p.GetId())
+	}
+	summaryID := payloadString(p.GetPayload(), "summary_id")
 	return domain.RetrievalCandidate{
-		ChunkID:      pointIDString(p.GetId()),
+		ChunkID:      chunkID,
 		DocumentID:   payloadString(p.GetPayload(), "document_id"),
-		SummaryID:    payloadString(p.GetPayload(), "summary_id"),
+		SummaryID:    summaryID,
 		Score:        float64(p.GetScore()),
 		Source:       payloadString(p.GetPayload(), "source"),
 		Text:         payloadString(p.GetPayload(), "text"),
@@ -328,16 +340,27 @@ func (q *QdrantStore) pointToCandidate(p *qdrant.ScoredPoint) domain.RetrievalCa
 }
 
 func (q *QdrantStore) retrievedToCandidate(p *qdrant.RetrievedPoint) domain.RetrievalCandidate {
+	chunkID := payloadString(p.GetPayload(), "chunk_id")
+	if chunkID == "" {
+		chunkID = pointIDString(p.GetId())
+	}
+	summaryID := payloadString(p.GetPayload(), "summary_id")
 	return domain.RetrievalCandidate{
-		ChunkID:      pointIDString(p.GetId()),
+		ChunkID:      chunkID,
 		DocumentID:   payloadString(p.GetPayload(), "document_id"),
-		SummaryID:    payloadString(p.GetPayload(), "summary_id"),
+		SummaryID:    summaryID,
 		Score:        0,
 		Source:       payloadString(p.GetPayload(), "source"),
 		Text:         payloadString(p.GetPayload(), "text"),
 		ContentClass: payloadString(p.GetPayload(), "content_class"),
 		Layer:        "chunk",
 	}
+}
+
+func (q *QdrantStore) pointIDForExternalID(entityType string, externalID string) *qdrant.PointId {
+	name := strings.TrimSpace(entityType) + ":" + strings.TrimSpace(externalID)
+	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(name)).String()
+	return qdrant.NewID(id)
 }
 
 func pointIDString(id *qdrant.PointId) string {
