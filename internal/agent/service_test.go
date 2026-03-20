@@ -116,3 +116,57 @@ func TestShouldEarlyStop(t *testing.T) {
 		t.Fatal("did not expect early stop for empty results")
 	}
 }
+
+func TestAskDirectRouteSkipsRetrievalPipeline(t *testing.T) {
+	cfg := config.Config{
+		LLMModel:          "mock-llm",
+		EmbeddingModel:    "mock-embed",
+		RouterModel:       "mock-llm",
+		GradeModel:        "mock-llm",
+		TopK:              4,
+		RerankTopM:        2,
+		MaxRetries:        2,
+		ChunkSize:         40,
+		ChunkOverlap:      10,
+		ChunkCollection:   "chunks",
+		SummaryCollection: "summaries",
+	}
+	llmClient := llm.NewMockClient()
+	ms := store.NewMemoryStore()
+	if err := ms.EnsureCollections(context.Background(), cfg.ChunkCollection, cfg.SummaryCollection); err != nil {
+		t.Fatalf("ensure collections: %v", err)
+	}
+	retr := retrieval.NewRetriever(cfg, llmClient, ms)
+	rrk := rerank.NewHTTPClient(cfg)
+	sqlTool := tools.NewSQLTool(nil, llmClient, cfg)
+	webTool := tools.NewWebTool(cfg)
+	svc, err := NewService(cfg, llmClient, retr, rrk, sqlTool, webTool)
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+
+	out, err := svc.Ask(context.Background(), domain.AskRequest{Question: "你好", ForceRoute: domain.RouteDirect, Debug: true})
+	if err != nil {
+		t.Fatalf("ask direct failed: %v", err)
+	}
+	if out.Route != domain.RouteDirect {
+		t.Fatalf("expected direct route, got %s", out.Route)
+	}
+	if out.Attempts != 1 {
+		t.Fatalf("expected one attempt for direct no-retrieval, got %d", out.Attempts)
+	}
+	if len(out.References) != 0 {
+		t.Fatalf("expected no references for direct no-retrieval, got %d", len(out.References))
+	}
+	directRaw, ok := out.Debug["direct"]
+	if !ok {
+		t.Fatal("expected direct debug block")
+	}
+	directMap, ok := directRaw.(map[string]any)
+	if !ok {
+		t.Fatal("expected direct debug map")
+	}
+	if skipped, ok := directMap["retrieval_skipped"].(bool); !ok || !skipped {
+		t.Fatal("expected retrieval_skipped=true")
+	}
+}

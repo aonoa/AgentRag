@@ -114,6 +114,34 @@ func (s *Service) Ask(ctx context.Context, req domain.AskRequest) (domain.AskRes
 		}
 		route = rd.Route
 	}
+	if route == domain.RouteDirect {
+		system, user := s.finalAnswerPrompts(question, route, s.renderContext(nil))
+		answer, err := s.llm.Chat(ctx, s.cfg.LLMModel, system, user)
+		if err != nil {
+			return domain.AskResponse{}, err
+		}
+		resp := domain.AskResponse{
+			Answer:            strings.TrimSpace(answer),
+			Route:             route,
+			RewrittenQuestion: question,
+			Attempts:          1,
+			References:        nil,
+		}
+		if req.Debug {
+			resp.Debug = map[string]any{
+				"route": route,
+				"direct": map[string]any{
+					"mode":              "direct_no_retrieval",
+					"retrieval_skipped": true,
+					"planner_skipped":   true,
+					"rewrite_skipped":   true,
+					"rerank_skipped":    true,
+					"grader_skipped":    true,
+				},
+			}
+		}
+		return resp, nil
+	}
 
 	plannedSubQueries, err := s.planSubQueries(ctx, question)
 	if err != nil {
@@ -212,6 +240,34 @@ func (s *Service) AskStream(ctx context.Context, req domain.AskRequest) (AskStre
 			return AskStreamResult{}, err
 		}
 		route = rd.Route
+	}
+	if route == domain.RouteDirect {
+		system, user := s.finalAnswerPrompts(question, route, s.renderContext(nil))
+		stream, err := s.llm.ChatStream(ctx, s.cfg.LLMModel, system, user)
+		if err != nil {
+			return AskStreamResult{}, err
+		}
+		result := AskStreamResult{
+			Route:             route,
+			RewrittenQuestion: question,
+			Attempts:          1,
+			References:        nil,
+			Stream:            stream,
+		}
+		if req.Debug {
+			result.Debug = map[string]any{
+				"route": route,
+				"direct": map[string]any{
+					"mode":              "direct_no_retrieval",
+					"retrieval_skipped": true,
+					"planner_skipped":   true,
+					"rewrite_skipped":   true,
+					"rerank_skipped":    true,
+					"grader_skipped":    true,
+				},
+			}
+		}
+		return result, nil
 	}
 	plannedSubQueries, err := s.planSubQueries(ctx, question)
 	if err != nil {
@@ -449,7 +505,7 @@ func (s *Service) buildOptionsForRoute(ctx context.Context, route domain.RouteTy
 			return merged, refsFromResult(merged), nil
 		}}, localHier, sqlOpt, webOpt}
 	case domain.RouteDirect:
-		return []retrievalOption{baseLocalDense, baseLocalSparse, localHier, sqlOpt, webOpt}
+		return nil
 	default:
 		return []retrievalOption{baseLocalDense, baseLocalSparse, localHier, sqlOpt, webOpt}
 	}
@@ -615,7 +671,7 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 }
 
 func (s *Service) route(ctx context.Context, question string) (routeDecision, error) {
-	system := "ROUTE_SELECTOR: 你只输出一个枚举值：direct_chunk/hierarchical/sql/web/direct/hybrid"
+	system := "ROUTE_SELECTOR: 你只输出一个枚举值：direct_chunk/hierarchical/sql/web/direct/hybrid。若问题是简单通用问答（无需知识库检索即可回答，例如寒暄、常识性定义、通用解释），输出 direct。"
 	msg, err := s.llm.Chat(ctx, s.cfg.RouterModel, system, question)
 	if err != nil {
 		return routeDecision{}, fmt.Errorf("route decision: %w", err)
