@@ -8,6 +8,7 @@ import (
 	"agentragplus/internal/config"
 	"agentragplus/internal/domain"
 	"agentragplus/internal/llm"
+	"agentragplus/internal/obs"
 	"agentragplus/internal/store"
 )
 
@@ -22,6 +23,9 @@ func NewRetriever(cfg config.Config, llmClient llm.Client, vectorStore store.Vec
 }
 
 func (r *Retriever) DirectChunk(ctx context.Context, question string, filter map[string]any) (domain.RetrievalResult, error) {
+	ctx, span := obs.StartSpan(ctx, "retrieval.direct_chunk")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "retrieval.direct_chunk.start")
 	embed, err := r.llm.Embed(ctx, r.cfg.EmbeddingModel, []string{question})
 	if err != nil {
 		return domain.RetrievalResult{}, fmt.Errorf("embed question: %w", err)
@@ -40,6 +44,9 @@ func (r *Retriever) DirectChunk(ctx context.Context, question string, filter map
 }
 
 func (r *Retriever) SparseChunk(ctx context.Context, question string, filter map[string]any) (domain.RetrievalResult, error) {
+	ctx, span := obs.StartSpan(ctx, "retrieval.sparse_chunk")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "retrieval.sparse_chunk.start")
 	cands, err := r.store.SearchChunksSparse(ctx, r.cfg.ChunkCollection, question, r.cfg.TopK, filter)
 	if err != nil {
 		return domain.RetrievalResult{}, err
@@ -54,6 +61,9 @@ func (r *Retriever) SparseChunk(ctx context.Context, question string, filter map
 }
 
 func (r *Retriever) Hierarchical(ctx context.Context, question string, filter map[string]any) (domain.RetrievalResult, error) {
+	ctx, span := obs.StartSpan(ctx, "retrieval.hierarchical")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "retrieval.hierarchical.start")
 	embed, err := r.llm.Embed(ctx, r.cfg.EmbeddingModel, []string{question})
 	if err != nil {
 		return domain.RetrievalResult{}, fmt.Errorf("embed question: %w", err)

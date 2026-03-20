@@ -63,6 +63,10 @@
   "skills": {
     "base_dir": ""
   },
+  "observability": {
+    "enable_tracing": true,
+    "enable_callbacks": true
+  },
   "orchestration": {
     "planner_max_subqueries": 3,
     "max_external_calls": 1,

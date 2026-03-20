@@ -13,6 +13,7 @@ import (
 	"agentragplus/internal/config"
 	"agentragplus/internal/domain"
 	"agentragplus/internal/llm"
+	"agentragplus/internal/obs"
 	"agentragplus/internal/rerank"
 	"agentragplus/internal/retrieval"
 	"agentragplus/internal/skills"
@@ -134,11 +135,17 @@ func NewService(cfg config.Config, llmClient llm.Client, retr *retrieval.Retriev
 }
 
 func (s *Service) Ask(ctx context.Context, req domain.AskRequest) (domain.AskResponse, error) {
+	ctx = obs.EnsureRequestID(ctx)
+	ctx = obs.EnsureWorkflowRunID(ctx)
+	ctx, span := obs.StartSpan(ctx, "agent.ask")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "agent.ask.start")
 	question := strings.TrimSpace(req.Question)
 	if question == "" {
 		return domain.AskResponse{}, errors.New("question is required")
 	}
 	if s.shouldUseSkill(req) {
+		obs.EmitEvent(ctx, "agent.ask.skill")
 		return s.runSkillAsk(ctx, req)
 	}
 	route := req.ForceRoute
@@ -150,6 +157,7 @@ func (s *Service) Ask(ctx context.Context, req domain.AskRequest) (domain.AskRes
 		route = rd.Route
 	}
 	if route == domain.RouteDirect {
+		obs.EmitEvent(ctx, "agent.ask.route.direct")
 		system, user := s.finalAnswerPrompts(question, route, s.renderContext(nil))
 		answer, err := s.llm.Chat(ctx, s.cfg.LLMModel, system, user)
 		if err != nil {
@@ -237,6 +245,7 @@ func (s *Service) Ask(ctx context.Context, req domain.AskRequest) (domain.AskRes
 	debug := map[string]any{"route": route}
 	var refs []domain.Reference
 	for attempt := 1; attempt <= s.cfg.MaxRetries; attempt++ {
+		obs.EmitEvent(ctx, fmt.Sprintf("agent.ask.attempt.%d", attempt))
 		out, err := s.runnable.Invoke(ctxOrch, workflowInput{
 			Question:     current,
 			Route:        route,
@@ -301,11 +310,17 @@ func (s *Service) Ask(ctx context.Context, req domain.AskRequest) (domain.AskRes
 }
 
 func (s *Service) AskStream(ctx context.Context, req domain.AskRequest) (AskStreamResult, error) {
+	ctx = obs.EnsureRequestID(ctx)
+	ctx = obs.EnsureWorkflowRunID(ctx)
+	ctx, span := obs.StartSpan(ctx, "agent.ask_stream")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "agent.ask_stream.start")
 	question := strings.TrimSpace(req.Question)
 	if question == "" {
 		return AskStreamResult{}, errors.New("question is required")
 	}
 	if s.shouldUseSkill(req) {
+		obs.EmitEvent(ctx, "agent.ask_stream.skill")
 		return s.runSkillAskStream(ctx, req)
 	}
 	route := req.ForceRoute
@@ -317,6 +332,7 @@ func (s *Service) AskStream(ctx context.Context, req domain.AskRequest) (AskStre
 		route = rd.Route
 	}
 	if route == domain.RouteDirect {
+		obs.EmitEvent(ctx, "agent.ask_stream.route.direct")
 		system, user := s.finalAnswerPrompts(question, route, s.renderContext(nil))
 		probe, err := s.llm.Chat(ctx, s.cfg.LLMModel, system, user)
 		if err != nil {
@@ -770,7 +786,10 @@ func (s *Service) finalAnswerPrompts(question string, route domain.RouteType, co
 func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowInput, workflowOutput], error) {
 	wf := compose.NewWorkflow[workflowInput, workflowOutput]()
 
-	initNode := compose.InvokableLambda(func(_ context.Context, in workflowInput) (workflowState, error) {
+	initNode := compose.InvokableLambda(func(ctx context.Context, in workflowInput) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.init")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.init")
 		subs := in.SubQueries
 		if len(subs) == 0 {
 			subs = []string{in.Question}
@@ -785,6 +804,9 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 	})
 
 	rewriteNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.rewrite")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.rewrite")
 		rewritten, err := s.rewrite(ctx, st.Question, st.Attempt)
 		if err != nil {
 			return workflowState{}, err
@@ -794,6 +816,9 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 	})
 
 	retrieveNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.retrieve")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.retrieve")
 		stats := &orchestrationStats{SubQueries: len(st.SubQueries), StartAt: time.Now()}
 		res, refs, err := s.retrieveForPlannedSubQueries(ctx, st.Route, st.RewrittenQuestion, st.SubQueries, st.ExtraFilters, stats)
 		if err != nil {
@@ -815,6 +840,9 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 	})
 
 	rerankNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.rerank")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.rerank")
 		out, err := s.rerankAndTrim(ctx, st.RewrittenQuestion, st.Retrieval)
 		if err != nil {
 			return workflowState{}, err
@@ -824,12 +852,18 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 		return st, nil
 	})
 
-	contextNode := compose.InvokableLambda(func(_ context.Context, st workflowState) (workflowState, error) {
+	contextNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.context")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.context")
 		st.Context = s.renderContext(st.Retrieval.Candidates)
 		return st, nil
 	})
 
-	promptNode := compose.InvokableLambda(func(_ context.Context, st workflowState) (workflowState, error) {
+	promptNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.prompt")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.prompt")
 		system, user := s.finalAnswerPrompts(st.RewrittenQuestion, st.Route, st.Context)
 		st.SystemPrompt = system
 		st.UserPrompt = user
@@ -837,6 +871,9 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 	})
 
 	answerNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowState, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.answer")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.answer")
 		ans, err := s.llm.Chat(ctx, s.cfg.LLMModel, st.SystemPrompt, st.UserPrompt)
 		if err != nil {
 			return workflowState{}, err
@@ -846,7 +883,10 @@ func (s *Service) buildWorkflow(ctx context.Context) (compose.Runnable[workflowI
 		return st, nil
 	})
 
-	outputNode := compose.InvokableLambda(func(_ context.Context, st workflowState) (workflowOutput, error) {
+	outputNode := compose.InvokableLambda(func(ctx context.Context, st workflowState) (workflowOutput, error) {
+		ctx, span := obs.StartSpan(ctx, "agent.workflow.output")
+		defer obs.EndSpan(span, nil)
+		obs.EmitEvent(ctx, "workflow.node.output")
 		return workflowOutput{
 			Answer:            st.Answer,
 			RewrittenQuestion: st.RewrittenQuestion,

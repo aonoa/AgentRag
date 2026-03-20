@@ -10,6 +10,7 @@ import (
 
 	"agentragplus/internal/config"
 	"agentragplus/internal/llm"
+	"agentragplus/internal/obs"
 )
 
 type SQLTool struct {
@@ -25,6 +26,9 @@ func NewSQLTool(db *sql.DB, llmClient llm.Client, cfg config.Config) *SQLTool {
 var selectPattern = regexp.MustCompile(`(?i)^\s*select\s+`)
 
 func (t *SQLTool) Query(ctx context.Context, question string) (string, error) {
+	ctx, span := obs.StartSpan(ctx, "tool.sql.query")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "tool.sql.query.start")
 	if t.db == nil {
 		return "", errors.New("sql tool not configured")
 	}
@@ -75,5 +79,6 @@ func (t *SQLTool) Query(ctx context.Context, question string) (string, error) {
 	if len(result) == 1 {
 		result = append(result, "(no rows)")
 	}
+	obs.EmitEvent(ctx, "tool.sql.query.done")
 	return strings.Join(result, "\n"), nil
 }

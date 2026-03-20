@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"agentragplus/internal/obs"
+
 	openaiembed "github.com/cloudwego/eino-ext/components/embedding/openai"
 	openaimodel "github.com/cloudwego/eino-ext/components/model/openai"
 	einoembedding "github.com/cloudwego/eino/components/embedding"
@@ -62,6 +64,9 @@ func NewOpenAIClient(ctx context.Context, llmBaseURL, embeddingBaseURL, llmAPIKe
 }
 
 func (c *OpenAIClient) Chat(ctx context.Context, model string, systemPrompt string, userPrompt string) (string, error) {
+	ctx, span := obs.StartSpan(ctx, "llm.chat")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "llm.chat.start")
 	if model == "" {
 		model = c.llmModel
 	}
@@ -79,10 +84,14 @@ func (c *OpenAIClient) Chat(ctx context.Context, model string, systemPrompt stri
 	if out == nil {
 		return "", errors.New("empty chat response")
 	}
+	obs.EmitEvent(ctx, "llm.chat.done")
 	return strings.TrimSpace(out.Content), nil
 }
 
 func (c *OpenAIClient) ChatStream(ctx context.Context, model string, systemPrompt string, userPrompt string) (*schema.StreamReader[string], error) {
+	ctx, span := obs.StartSpan(ctx, "llm.chat_stream")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "llm.chat_stream.start")
 	if model == "" {
 		model = c.llmModel
 	}
@@ -110,6 +119,9 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, model string, systemPromp
 }
 
 func (c *OpenAIClient) Embed(ctx context.Context, model string, texts []string) ([][]float64, error) {
+	ctx, span := obs.StartSpan(ctx, "llm.embed")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "llm.embed.start")
 	if len(texts) == 0 {
 		return nil, errors.New("embed input is empty")
 	}
@@ -127,6 +139,7 @@ func (c *OpenAIClient) Embed(ctx context.Context, model string, texts []string) 
 	if len(result) != len(texts) {
 		return nil, fmt.Errorf("embedding response size mismatch: got=%d want=%d", len(result), len(texts))
 	}
+	obs.EmitEvent(ctx, "llm.embed.done")
 	return result, nil
 }
 

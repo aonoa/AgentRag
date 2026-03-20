@@ -14,6 +14,7 @@ import (
 	"agentragplus/internal/config"
 	"agentragplus/internal/domain"
 	"agentragplus/internal/llm"
+	"agentragplus/internal/obs"
 	"agentragplus/internal/store"
 )
 
@@ -28,6 +29,9 @@ func NewService(cfg config.Config, llmClient llm.Client, vectorStore store.Vecto
 }
 
 func (s *Service) IngestFile(ctx context.Context, filename string, raw []byte) (domain.UploadResponse, error) {
+	ctx, span := obs.StartSpan(ctx, "ingest.file")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "ingest.file.start")
 	if strings.TrimSpace(filename) == "" {
 		return domain.UploadResponse{}, errors.New("filename is required")
 	}
@@ -94,6 +98,7 @@ func (s *Service) IngestFile(ctx context.Context, filename string, raw []byte) (
 	if err := s.store.UpsertChunks(ctx, s.cfg.ChunkCollection, chunks); err != nil {
 		return domain.UploadResponse{}, fmt.Errorf("store chunks: %w", err)
 	}
+	obs.EmitEvent(ctx, "ingest.file.done")
 
 	return domain.UploadResponse{
 		DocumentID: documentID,
@@ -104,6 +109,9 @@ func (s *Service) IngestFile(ctx context.Context, filename string, raw []byte) (
 }
 
 func (s *Service) buildSummary(ctx context.Context, text string, contentClass string) (string, error) {
+	ctx, span := obs.StartSpan(ctx, "ingest.summary")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "ingest.summary.start")
 	if contentClass == "table" {
 		return limitRunes(text, 1200), nil
 	}
@@ -112,6 +120,7 @@ func (s *Service) buildSummary(ctx context.Context, text string, contentClass st
 	if err != nil {
 		return "", fmt.Errorf("llm summarize: %w", err)
 	}
+	obs.EmitEvent(ctx, "ingest.summary.done")
 	return strings.TrimSpace(summary), nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"agentragplus/internal/config"
+	"agentragplus/internal/obs"
 )
 
 type WebTool struct {
@@ -22,6 +23,9 @@ func NewWebTool(cfg config.Config) *WebTool {
 }
 
 func (t *WebTool) Search(ctx context.Context, query string) (string, error) {
+	ctx, span := obs.StartSpan(ctx, "tool.web.search")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "tool.web.search.start")
 	if t.cfg.SerperAPIKey == "" {
 		return "", fmt.Errorf("web search not configured")
 	}
@@ -64,7 +68,9 @@ func (t *WebTool) Search(ctx context.Context, query string) (string, error) {
 		parts = append(parts, fmt.Sprintf("[%d] %s\n%s\n%s", i+1, strings.TrimSpace(row.Title), strings.TrimSpace(row.Snippet), strings.TrimSpace(row.Link)))
 	}
 	if len(parts) == 0 {
+		obs.EmitEvent(ctx, "tool.web.search.done")
 		return "(no web results)", nil
 	}
+	obs.EmitEvent(ctx, "tool.web.search.done")
 	return strings.Join(parts, "\n\n"), nil
 }

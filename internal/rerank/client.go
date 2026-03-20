@@ -12,6 +12,7 @@ import (
 
 	"agentragplus/internal/config"
 	"agentragplus/internal/domain"
+	"agentragplus/internal/obs"
 )
 
 type Client interface {
@@ -31,6 +32,9 @@ func NewHTTPClient(cfg config.Config) *HTTPClient {
 }
 
 func (c *HTTPClient) Rerank(ctx context.Context, query string, candidates []domain.RetrievalCandidate, topM int) ([]domain.RetrievalCandidate, error) {
+	ctx, span := obs.StartSpan(ctx, "rerank.http")
+	defer obs.EndSpan(span, nil)
+	obs.EmitEvent(ctx, "rerank.http.start")
 	if len(candidates) == 0 {
 		return candidates, nil
 	}
@@ -97,6 +101,7 @@ func (c *HTTPClient) Rerank(ctx context.Context, query string, candidates []doma
 	if len(rescored) > topM {
 		rescored = rescored[:topM]
 	}
+	obs.EmitEvent(ctx, "rerank.http.done")
 	return rescored, nil
 }
 

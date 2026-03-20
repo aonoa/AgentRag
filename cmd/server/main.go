@@ -37,6 +37,11 @@ func main() {
 	ctx := context.Background()
 
 	logger := obs.New(cfg.LogLevel)
+	shutdownTracing := obs.InitTracing(cfg.ObsEnableTracing)
+	defer func() {
+		_ = shutdownTracing(context.Background())
+	}()
+	obs.RegisterGlobalCallbackHandlerIfEnabled(cfg.ObsEnableCallbacks, logger)
 
 	var llmClient llm.Client = llm.NewMockClient()
 	if cfg.UseOpenAI {

@@ -52,6 +52,12 @@
 
 - `SKILLS_DIR`：技能目录，按 `<SKILLS_DIR>/<skillName>/SKILL.md` 组织。
 - 当请求里显式传 `skill` 时，系统优先执行 skill；否则可根据问题与技能名匹配自动触发。
+
+## Observability
+
+- `OBS_ENABLE_TRACING`：开启基础 trace span（默认 `true`）
+- `OBS_ENABLE_CALLBACKS`：开启 Eino callbacks 全局处理器（默认 `true`）
+- 响应头 `X-Request-Id` 用于请求级关联排障
 - `DIRECT_CONFIDENCE_THRESHOLD`
 - `DIRECT_AUTO_FALLBACK`
 - `DIRECT_FALLBACK_ROUTE` (`catalog|direct_chunk|hierarchical|hybrid|sql|web|direct`)

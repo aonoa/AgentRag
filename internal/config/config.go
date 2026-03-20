@@ -66,6 +66,9 @@ type Config struct {
 	SerperAPIKey string
 	SkillsDir    string
 
+	ObsEnableTracing   bool
+	ObsEnableCallbacks bool
+
 	PlannerMaxSubqueries       int
 	OrchestratorMaxExternal    int
 	OrchestratorTimeoutSeconds int
@@ -135,6 +138,8 @@ func builtinDefaults() Config {
 		SQLDriver:                  SQLDriverSQLite,
 		SerperAPIKey:               "",
 		SkillsDir:                  "",
+		ObsEnableTracing:           true,
+		ObsEnableCallbacks:         true,
 		PlannerMaxSubqueries:       3,
 		OrchestratorMaxExternal:    2,
 		OrchestratorTimeoutSeconds: 8,
@@ -221,7 +226,7 @@ func toCanonicalKV(raw map[string]any) map[string]any {
 		"EMBEDDING_DIM", "HTTP_TIMEOUT_SECONDS", "QDRANT_TIMEOUT_SECONDS", "VECTOR_BACKEND", "QDRANT_URL", "QDRANT_HOST",
 		"QDRANT_GRPC_PORT", "QDRANT_API_KEY", "QDRANT_USE_TLS", "QDRANT_CHUNK_COLLECTION", "QDRANT_SUMMARY_COLLECTION",
 		"CHUNK_SIZE", "CHUNK_OVERLAP", "RETRIEVAL_TOP_K", "MAX_RETRY_LOOPS", "RERANK_TOP_M", "RERANK_URL",
-		"RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL", "GRADE_MODEL", "SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR",
+		"RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL", "GRADE_MODEL", "SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR", "OBS_ENABLE_TRACING", "OBS_ENABLE_CALLBACKS",
 		"PLANNER_MAX_SUBQUERIES", "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "ORCHESTRATOR_TIMEOUT_SECONDS", "EARLY_STOP_MIN_CANDIDATES", "EARLY_STOP_TOP_SCORE",
 		"DIRECT_CONFIDENCE_THRESHOLD", "DIRECT_AUTO_FALLBACK", "DIRECT_FALLBACK_ROUTE",
 	} {
@@ -283,6 +288,8 @@ func toCanonicalKV(raw map[string]any) map[string]any {
 
 	assignNested(raw, out, "SERPER_API_KEY", "web", "serper_api_key")
 	assignNested(raw, out, "SKILLS_DIR", "skills", "base_dir")
+	assignNested(raw, out, "OBS_ENABLE_TRACING", "observability", "enable_tracing")
+	assignNested(raw, out, "OBS_ENABLE_CALLBACKS", "observability", "enable_callbacks")
 
 	assignNested(raw, out, "PLANNER_MAX_SUBQUERIES", "orchestration", "planner_max_subqueries")
 	assignNested(raw, out, "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "orchestration", "max_external_calls")
@@ -327,7 +334,7 @@ func currentEnvKV() map[string]any {
 		"QDRANT_HOST", "QDRANT_GRPC_PORT", "QDRANT_API_KEY", "QDRANT_USE_TLS", "QDRANT_CHUNK_COLLECTION",
 		"QDRANT_SUMMARY_COLLECTION", "CHUNK_SIZE", "CHUNK_OVERLAP", "RETRIEVAL_TOP_K", "MAX_RETRY_LOOPS",
 		"RERANK_TOP_M", "RERANK_URL", "RERANK_API_KEY", "RERANK_MODEL", "ROUTER_MODEL", "GRADE_MODEL",
-		"SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR",
+		"SQL_DSN", "SQL_DRIVER", "SERPER_API_KEY", "SKILLS_DIR", "OBS_ENABLE_TRACING", "OBS_ENABLE_CALLBACKS",
 		"PLANNER_MAX_SUBQUERIES", "ORCHESTRATOR_MAX_EXTERNAL_CALLS", "ORCHESTRATOR_TIMEOUT_SECONDS", "EARLY_STOP_MIN_CANDIDATES", "EARLY_STOP_TOP_SCORE",
 		"DIRECT_CONFIDENCE_THRESHOLD", "DIRECT_AUTO_FALLBACK", "DIRECT_FALLBACK_ROUTE",
 	} {
@@ -526,6 +533,16 @@ func applyKV(cfg *Config, kv map[string]any) error {
 		return err
 	} else if ok {
 		cfg.SkillsDir = strings.TrimSpace(v)
+	}
+	if v, ok, err := kvBool(kv, "OBS_ENABLE_TRACING"); err != nil {
+		return err
+	} else if ok {
+		cfg.ObsEnableTracing = v
+	}
+	if v, ok, err := kvBool(kv, "OBS_ENABLE_CALLBACKS"); err != nil {
+		return err
+	} else if ok {
+		cfg.ObsEnableCallbacks = v
 	}
 	if v, ok, err := kvInt(kv, "PLANNER_MAX_SUBQUERIES"); err != nil {
 		return err

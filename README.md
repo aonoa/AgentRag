@@ -209,6 +209,7 @@ make build         # 编译
 - `web`：Web search外部依赖（`serper_api_key`）
 - `orchestration`：编排控制（含 direct 置信度阈值与自动回退）
 - `skills`：技能目录（`base_dir`）
+- `observability`：可观测开关（`enable_tracing` / `enable_callbacks`）
 
 ## SQL 数据库可配置
 
